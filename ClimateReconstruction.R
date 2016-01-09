@@ -1,5 +1,5 @@
 # R codes below calculates correlation coefficients between tree ring and climate variables
-
+# Need to clean up this codes
 
 ## STEP 1: Data Prep----
 
