@@ -1,3 +1,4 @@
+# R codes below calculates correlation coefficients between tree ring and climate variables
 
 
 ## STEP 1: Data Prep----
@@ -15,6 +16,7 @@ library(dplR)
 
 year=ring[,"year"]
 width=ring[,"width"]
+
 
 series=data.frame(width,row.names=year)
 names(width)=rownames(series)
