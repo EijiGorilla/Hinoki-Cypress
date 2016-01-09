@@ -10,6 +10,7 @@ library(tseries)
 b=file.choose() # 100-19M Hinoki ring width 1734-2006.csv
 ring=read.csv(b,stringsAsFactors=FALSE,na.strings=".")
 
+ring=read.csv
 ## Detrend a raw ring width by Ar and get residual chronology
 ### note that the detrended series is the residuals of an Ar model divided by the mean of those residuals to yield a series with white noise and a mean of one
 library(dplR)
