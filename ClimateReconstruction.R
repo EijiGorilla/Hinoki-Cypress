@@ -410,6 +410,7 @@ par(op)
 cor(X1$y1,Y[,2],method="spearman")
 M0=lm(X1$y1~Y[,2])
 summary(M0) 
+plot(M0)
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # 
