@@ -1,3 +1,10 @@
+library(RMySQL)
+
+con=dbConnect(RMySQL::MySQL(), host = "localhost",user = "root", password = "timberland",dbname="HinokiCypress")
+dbListTables(con)
+
+
+
 # R codes below calculates correlation coefficients between tree ring and climate variables
 # Need to clean up this codes
 
@@ -48,6 +55,7 @@ Climate=read.csv(a,stringsAsFactors=FALSE,na.strings=".")
 ## 1B-1: When You Chose "Daily Min. Temp. Matsumoto 1898-2006.csv-----
 # Note: Minimum temperatures above 0 are already omitted from the dataset.
 # Convert date to Date class
+head(Climate)
 Climate$date=as.Date(Climate$date)
 Climate$time=as.Date(Climate$date,"%Y-%m-%d")
 Climate$week=1
@@ -68,7 +76,6 @@ X1=Climate[,c("min.temp","year","month")]
 X1$min.temp[X1$min.temp>=0]=0
 X1=recast(X1,year~variable+month,sum,id.var=c("year","month"),na.rm=FALSE) # Sum daily min temp
 colnames(X1)=c("year","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
-
 
 # Select Type of Ring Width
 Y=ring
@@ -301,6 +308,13 @@ summary(M0)
 # Choose Climate Variables:----
 a=file.choose() # Monthly climate Matsumoto 1898-2006.csv
 Climate=read.csv(a,stringsAsFactors=FALSE,na.strings=".")
+
+write.csv(xx,"ClimateData.csv",row.names=FALSE)
+xx$VariableID=1
+xx[xx$VariableID=="MTPP"]=8
+
+write.csv(xx,"ClimateData.csv",row.names=FALSE)
+
 
 ## BootRes
 X=Climate[,-1] # drop date
