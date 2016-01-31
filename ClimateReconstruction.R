@@ -1,56 +1,84 @@
+# R codes below are used for climate reconstruction of past climate using Hinoki cypress tree ring width:
+# Tree ring ID: '100$19M', Period: 1734-2006
+# Climate Records: 
+#   Site: Matsumoto
+
 library(RMySQL)
 
+# Tree ring data:
 con=dbConnect(RMySQL::MySQL(), host = "localhost",user = "root", password = "timberland",dbname="HinokiCypress")
 dbListTables(con)
+dbListFields(con,'treeringsource')
+dbListFields(con,'treeringwidthdata')
+
+rs=dbSendQuery(con,"SELECT Years,RawWidth,TreeRingName FROM treeringsource, treeringwidthdata WHERE TreeRingID=ringID AND TreeRingName='100$19M' ORDER BY Years;")
+ring=dbFetch(rs,n=-1); ring=ring[,c(1,2)]; colnames(ring)=c("year","width")
+dbClearResult(rs)
+dbDisconnect(con)
+
+# Climate Data:
+con=dbConnect(RMySQL::MySQL(),host='localhost',user='root',password='timberland',dbname='HinokiCypress')
+dbListTables(con)
+dbListFields(con,'climatedata'); dbListFields(con,'climatestation'); dbListFields(con,'climatevariable')
+
+rs=dbSendQuery(con,"SELECT Years,Months,variable,yvalue,SiteNames FROM climatedata,climatestation,climatevariable 
+               WHERE sitid=SiteID AND varid=VariableID AND SiteNames='Matsumoto' ORDER BY Years;")
+clim=dbFetch(rs,n=-1)
+dbClearResult(rs)
+dbDisconnect(con)
 
 
-
-# R codes below calculates correlation coefficients between tree ring and climate variables
-# Need to clean up this codes
-
-## STEP 1: Data Prep----
-
+# Ring width:----
 # clear workspace
 rm(list=ls())
 
-
-# 1A: Ring Width:----
-b=file.choose() # 100-19M Hinoki ring width 1734-2006.csv
-ring=read.csv(b,stringsAsFactors=FALSE,na.strings=".")
-
-## Detrend a raw ring width by Ar and get residual chronology
+# Detrend a raw ring width by Ar and get residual chronology
 library(dplR)
 
 year=ring[,"year"]
 width=ring[,"width"]
 
-
 series=data.frame(width,row.names=year)
 names(width)=rownames(series)
 
-series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE,nyrs=20)
+#series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE,nyrs=20)
 
+pdf(file="detrend_width.pdf",width=12,height=9)
+series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE)
+dev.off()
 
 gg=data.frame(year=rownames(series.rwi),width=series.rwi,row.names=NULL)
 ring=merge(ring,gg,by="year") # Use this ring data for all analyses
 
-# Fit AR1 to Selected Ring width series to get Residual Series
+
+# Fit AR1 for Residual Series
 library(tseries)
 
 AR=select.list(names(ring[,2:ncol(ring)]),multiple=TRUE,title="Select Type of Rind Width Series For Residual Series:",graphics=TRUE)
-AR
+
 x=ring[,names(ring) %in% c(AR)]
 M=arma(x,order=c(1,0))
 
 acf(residuals(M),na.action=na.remove)
 ring=data.frame(ring,ar1=residuals(M)) # Use "residual chronology" derived from selected type of ring width series
+colnames(ring)[c(2:ncol(ring))]=c("raw","spline","modnegexp","means","ar","res")
 
-colnames(ring)[c(2:ncol(ring))]=c("Raw","Spline","ModNegExp","Means","Ar","Res")
+
+# Climate Data:----
+head(clim)
+
+# Delete missing values (i.e., -999.0):
+clim$yvalue[clim$yvalue==-999.0]=NA
+head(clim)
 
 
-# 1B: Climate Data:----
-a=file.choose()
-Climate=read.csv(a,stringsAsFactors=FALSE,na.strings=".")
+
+
+
+
+
+
+
 
 ## 1B-1: When You Chose "Daily Min. Temp. Matsumoto 1898-2006.csv-----
 # Note: Minimum temperatures above 0 are already omitted from the dataset.
@@ -66,8 +94,8 @@ Climate$week[Climate$day>=15 & Climate$day<=31]=2
 Climate$min.temp=as.numeric(Climate$min.temp)
 
 
-## STEP 2: Choose Climate Variables for Analysis:----
 
+###########################################
 ## 2A: Daily Minimum Temperature Matsumoto 1898-2006:----
 ## 2A-1: Sum of Daily Minimum Temperature:----
 library(reshape2)
@@ -147,6 +175,7 @@ cor(X$y1,Y[,2],method="spearman") # Spearman should be used when variables are n
 M0=lm(X$y1~Y[,2])
 summary(M0) 
 
+############################
 
 ## PCA Analysis
 X=X1
@@ -198,19 +227,6 @@ summary(M1)
 M2=update(M1,.~.-Dim.4)
 summary(M2)
 
-# Random Forest to id more important months
-library(randomForest)
-
-X3=X2[,-1]
-head(X3)
-
-fit=randomForest(ModNegExp~.,data=X3,confusion=TRUE,ntree=5000,proximity=TRUE,importance=TRUE,na.action=na.omit)
-print(fit)
-
-# Variable importance
-importance(fit)
-varImpPlot(fit,cex=0.7,main="Variable Importance")
-box(which = "outer", lty = "solid")
 
 
 
@@ -306,31 +322,23 @@ summary(M0)
 
 
 # Choose Climate Variables:----
-a=file.choose() # Monthly climate Matsumoto 1898-2006.csv
-Climate=read.csv(a,stringsAsFactors=FALSE,na.strings=".")
 
-write.csv(xx,"ClimateData.csv",row.names=FALSE)
-xx$VariableID=1
-xx[xx$VariableID=="MTPP"]=8
-
-write.csv(xx,"ClimateData.csv",row.names=FALSE)
-
+colnames(clim)[1:2]=c("year","month")
+X=clim[,c(1:4)]
+X=melt(X,id=c("year","month","variable","yvalue"))
+X=cast(X,year+month~variable)
 
 ## BootRes
-X=Climate[,-1] # drop date
-
 # Choose only up to 2 cliamte variables:
-Clim=select.list(names(X[,3:ncol(X)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
-List=c("year","month")
-X=X[,names(X) %in% c(List,Clim)]
-
+Clim=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
+X1=X[,names(X) %in% c("year","month",Clim)]
+tail(X1)
 
 # Select Type of Ring Width (Choose only one)
 Y=ring
-Ring.list=select.list(names(Y[,2:ncol(Y)]),multiple=TRUE,title="Select Rind Width Series of Your Interest:",graphics=TRUE)
-List="year"
-Y=Y[,names(Y) %in% c(List,Ring.list)]
 
+Ring.list=select.list(names(Y[,2:ncol(Y)]),multiple=TRUE,title="Select Rind Width Series of Your Interest:",graphics=TRUE)
+Y=Y[,names(Y) %in% c("year",Ring.list)]
 
 # Identify Strength of Monthly Signals with Tree Ring----
 library(bootRes)
@@ -339,10 +347,17 @@ Y=data.frame(Y[,1:2],row.names="year")
 
 # View Important Climate Variables
 op=par(mar=c(5,5,6,3))
-dc.corr <- dcc(Y,X,method = "corr")
+dc.corr <- dcc(Y,X1,method = "corr")
 dcplot(dc.corr)
 par(op)
+which(is.na(X1))
 
+data(muc.clim)
+data(muc.spruce)
+head(muc.clim)
+head(muc.spruce)
+dc.resp=dcc(muc.spruce,muc.clim)
+dcplot(dc.resp)
 
 ## Correlation and Linear Regression
 # Reshape Climte dataset
