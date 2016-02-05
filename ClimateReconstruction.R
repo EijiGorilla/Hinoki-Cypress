@@ -3,7 +3,18 @@
 # Climate Records: 
 #   Site: Matsumoto
 
+# Load R packages:
 library(RMySQL)
+library(dplyr)
+library(tseries)
+library(bootRes)
+library(reshape)
+library(reshape2)
+
+
+
+# clear workspace
+rm(list=ls())
 
 # Tree ring data:
 con=dbConnect(RMySQL::MySQL(), host = "localhost",user = "root", password = "timberland",dbname="HinokiCypress")
@@ -29,12 +40,7 @@ dbDisconnect(con)
 
 
 # Ring width:----
-# clear workspace
-rm(list=ls())
-
 # Detrend a raw ring width by Ar and get residual chronology
-library(dplR)
-
 year=ring[,"year"]
 width=ring[,"width"]
 
@@ -52,8 +58,6 @@ ring=merge(ring,gg,by="year") # Use this ring data for all analyses
 
 
 # Fit AR1 for Residual Series
-library(tseries)
-
 AR=select.list(names(ring[,2:ncol(ring)]),multiple=TRUE,title="Select Type of Rind Width Series For Residual Series:",graphics=TRUE)
 
 x=ring[,names(ring) %in% c(AR)]
@@ -65,11 +69,109 @@ colnames(ring)[c(2:ncol(ring))]=c("raw","spline","modnegexp","means","ar","res")
 
 
 # Climate Data:----
-head(clim)
+# NDM0 = the number of days of daily min. temp. below 0 Celsius (excluding 0)　（日最低気温0度未満の日数）
+# NDA0 = the number of days of average daily temp. below 0 Celsius　（日平均気温0度未満の日数）
+# ADMM = Monthly average daily min. temp. (日最低気温の月平均）
+# ADMX = Monthly average daily max. temp. (日最高気温の月平均）
+# ADMMX = ADMX - ADMM
+# ADTM = Average temp.　（平均気温）
+# MTPP = Monthly total precipitation
 
 # Delete missing values (i.e., -999.0):
-clim$yvalue[clim$yvalue==-999.0]=NA
-head(clim)
+Y=clim
+Y$yvalue[Y$yvalue==-999.0]=NA
+
+# Choose Climate Variables:----
+colnames(Y)[1:2]=c("year","month")
+Y=Y[,c(1:4)]
+Y=dcast(Y,year+month~variable)
+
+
+# BootRes:
+# Choose only up to 2 cliamte variables:
+Clim=select.list(names(Y[,3:ncol(Y)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
+Y1=Y[,names(Y) %in% c("year","month",Clim)]
+
+# Select Type of Ring Width (Choose only one)
+X=ring
+
+Ring.list=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Rind Width Series of Xour Interest:",graphics=TRUE)
+X=X[,names(X) %in% c("year",Ring.list)]
+
+# Identify Strength of Monthly Signals with Tree Ring----
+X=data.frame(X[,1:2],row.names="year")
+
+# View Important Climate Variables
+op=par(mar=c(5,5,6,3))
+dc.corr <- dcc(X,Y1,method = "corr")
+dcplot(dc.corr)
+par(op)
+
+
+## Correlation and Linear Regression
+# Reshape Climte dataset
+## Use only one climate variable:
+
+Clim=select.list(names(Y[,3:ncol(Y)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
+Y1=Y[,names(Y) %in% c("year","month",Clim)]
+Y1=recast(Y1,year~variable+month,id.var=c("year","month"),na.rm=TRUE)
+
+# Convert to time series object
+Y1=ts(Y1,frequency=1,start=min(Y1$year),end=max(Y1$year))
+Y1=cbind(p=Y1,c=lag(Y1))
+Y1=as.data.frame(Y1)
+
+# Rename variables for ease of interpretation
+colnames(Y1)=c("p.year","p.Jan","p.Feb","p.Mar","p.Apr","p.May","p.Jun","p.Jul","p.Aug","p.Sep","p.Oct","p.Nov","p.Dec",
+               "year","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+ind=which(colnames(Y1)=="year")
+Y1=Y1[-1,c(ind,2:(ind-1),(ind+1):ncol(Y1))]
+
+# Select Months to be Averaged
+Month.list=select.list(names(Y1[,c(2:ncol(Y1))]),multiple=TRUE,title="Choose Months to be Averaged:",graphics=TRUE)
+if(length(Month.list)==1) {Y1=transform(Y1,means=Y1[,c(Month.list)])} else{Y1=transform(Y1,means=rowMeans(Y1[,c(Month.list)]))}
+
+# Delete rows where missing values are observed
+Y1=na.omit(Y1)
+
+# ID time period
+time=paste(min(Y1$year),max(Y1$year),sep="-")
+timePeriod=matrix(unlist(strsplit(time,"-")),length(time),2,byrow=TRUE)
+
+# Select Ring Width during the specified Period
+X=ring
+X=subset(X,year>=as.numeric(timePeriod[1,1]) & year<=as.numeric(timePeriod[1,2]))
+Ring.list=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Rind Width Series of Xour Interest:",graphics=TRUE)
+X=X[,names(X) %in% c("year",Ring.list)]
+
+# Plot
+RingName=names(X)[2]
+
+op=par(mar=c(5,5,4,5))
+
+c=paste(Month.list,collapse=", ")
+plot(Y1$year,Y1$means,type="l",xlab="Year",ylab=Clim,main=paste("Months: ",c,sep=""))
+par(new=TRUE)
+plot(X$year,X[,2],col="blue",type="l",axes = FALSE, bty = "n", xlab = "", ylab = "") # Tree ring
+axis(side=4, at = pretty(range(X[,2])))
+mtext(RingName, side=4, line=3)
+
+par(op)
+
+
+# Run correlation and linear regression
+## With mean
+
+plot(X[,2],Y1$means,xlab=RingName,ylab=Clim)
+cor(X[,2],Y1$means,method="pearson")
+
+
+M0=lm(Y1$means~X[,2])
+summary(M0) 
+plot(M0)
+
+####################################################
+
 
 
 
@@ -310,136 +412,6 @@ summary(M0)
 
 
 
-
-## 2B: Other Climate Variables:----
-# NDM0 = the number of days of daily min. temp. below 0 Celsius (excluding 0)　（日最低気温0度未満の日数）
-# NDA0 = the number of days of average daily temp. below 0 Celsius　（日平均気温0度未満の日数）
-# ADMM = Monthly average daily min. temp. (日最低気温の月平均）
-# ADMX = Monthly average daily max. temp. (日最高気温の月平均）
-# ADMMX = ADMX - ADMM
-# ADTM = Average temp.　（平均気温）
-# MTPP = Monthly total precipitation
-
-
-# Choose Climate Variables:----
-
-colnames(clim)[1:2]=c("year","month")
-X=clim[,c(1:4)]
-X=melt(X,id=c("year","month","variable","yvalue"))
-X=cast(X,year+month~variable)
-
-## BootRes
-# Choose only up to 2 cliamte variables:
-Clim=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
-X1=X[,names(X) %in% c("year","month",Clim)]
-tail(X1)
-
-# Select Type of Ring Width (Choose only one)
-Y=ring
-
-Ring.list=select.list(names(Y[,2:ncol(Y)]),multiple=TRUE,title="Select Rind Width Series of Your Interest:",graphics=TRUE)
-Y=Y[,names(Y) %in% c("year",Ring.list)]
-
-# Identify Strength of Monthly Signals with Tree Ring----
-library(bootRes)
-
-Y=data.frame(Y[,1:2],row.names="year")
-
-# View Important Climate Variables
-op=par(mar=c(5,5,6,3))
-dc.corr <- dcc(Y,X1,method = "corr")
-dcplot(dc.corr)
-par(op)
-which(is.na(X1))
-
-data(muc.clim)
-data(muc.spruce)
-head(muc.clim)
-head(muc.spruce)
-dc.resp=dcc(muc.spruce,muc.clim)
-dcplot(dc.resp)
-
-## Correlation and Linear Regression
-# Reshape Climte dataset
-## Use only one climate variable:
-library(reshape2)
-
-X=Climate[,-1] # drop date
-Clim=select.list(names(X[,3:ncol(X)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
-List=c("year","month")
-X=X[,names(X) %in% c(List,Clim)]
-
-
-X1=recast(X,year~variable+month,id.var=c("year","month"),na.rm=TRUE)
-
-# Convert to time series object
-X1=ts(X1,frequency=1,start=min(X1$year),end=max(X1$year))
-X1=cbind(p=X1,c=lag(X1))
-
-# Convert back to data.frame
-X1=as.data.frame(X1)
-names(X1)
-
-# Rename variables for ease of interpretation
-colnames(X1)=c("p.year","p.Jan","p.Feb","p.Mar","p.Apr","p.May","p.Jun","p.Jul","p.Aug","p.Sep","p.Oct","p.Nov","p.Dec",
-               "year","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
-ind=which(colnames(X1)=="year")
-X1=X1[-1,c(ind,2:(ind-1),(ind+1):ncol(X1))]
-
-
-# Select Months to be Averaged
-Month.list=select.list(names(X1[,c(2:ncol(X1))]),multiple=TRUE,title="Choose Months to be Averaged:",graphics=TRUE)
-Month.list
-
-if(length(Month.list)==1) {
-  X1=transform(X1,means=X1[,c(Month.list)])
-} else{
-  X1=transform(X1,means=rowMeans(X1[,c(Month.list)]))
-}
-
-# Delete rows where missing values are observed
-X1=na.omit(X1)
-
-# ID time period
-time=paste(min(X1$year),max(X1$year),sep="-")
-timePeriod=matrix(unlist(strsplit(time,"-")),length(time),2,byrow=TRUE)
-timePeriod
-
-# Center sum with a column mean
-X1=transform(X1,y1=means)
-#X1=transform(X1,y1=mean(means)/means)
-#X1=transform(X1,y1=means/mean(means))
-#X1=transform(X1,y1=scale(means))
-
-
-# Select Ring Width during the specified Period
-Y=ring
-Y=subset(Y,year>=as.numeric(timePeriod[1,1]) & year<=as.numeric(timePeriod[1,2]))
-Ring.list=select.list(names(Y[,2:ncol(Y)]),multiple=TRUE,title="Select Rind Width Series of Your Interest:",graphics=TRUE)
-List="year"
-Y=Y[,names(Y) %in% c(List,Ring.list)]
-
-
-# Plot
-VarName=colnames(X)[3] # Name of Climate Variable Chosen
-RingName=colnames(Y)[2] # Name of Detrended Tree Ring Width
-
-op=par(mar=c(5,5,4,5))
-
-plot(X1$year,X1$y1,type="l",xlab="Year",ylab=VarName) # Climate variable
-par(new=TRUE)
-plot(Y$year,Y[,2],col="blue",type="l",axes = FALSE, bty = "n", xlab = "", ylab = "") # Tree ring
-axis(side=4, at = pretty(range(Y[,2])))
-mtext(RingName, side=4, line=3)
-
-par(op)
-
-# Run correlation and linear regression
-## With mean
-cor(X1$y1,Y[,2],method="spearman")
-M0=lm(X1$y1~Y[,2])
-summary(M0) 
-plot(M0)
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # 
