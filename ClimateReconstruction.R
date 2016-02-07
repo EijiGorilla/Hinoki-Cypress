@@ -10,6 +10,7 @@ library(tseries)
 library(bootRes)
 library(reshape)
 library(reshape2)
+library(dplR)
 
 
 
@@ -50,22 +51,23 @@ names(width)=rownames(series)
 #series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE,nyrs=20)
 
 pdf(file="detrend_width.pdf",width=12,height=9)
-series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE)
+series.rwi=detrend.series(y=width,y.name="100-19M",verbose=TRUE,nyrs=20)
 dev.off()
 
-gg=data.frame(year=rownames(series.rwi),width=series.rwi,row.names=NULL)
+gg=data.frame(year=rownames(series.rwi),series.rwi,row.names=NULL)
 ring=merge(ring,gg,by="year") # Use this ring data for all analyses
 
 
 # Fit AR1 for Residual Series
 AR=select.list(names(ring[,2:ncol(ring)]),multiple=TRUE,title="Select Type of Rind Width Series For Residual Series:",graphics=TRUE)
 
-x=ring[,names(ring) %in% c(AR)]
+x=ring[,names(ring) %in% AR]
 M=arma(x,order=c(1,0))
 
 acf(residuals(M),na.action=na.remove)
-ring=data.frame(ring,ar1=residuals(M)) # Use "residual chronology" derived from selected type of ring width series
-colnames(ring)[c(2:ncol(ring))]=c("raw","spline","modnegexp","means","ar","res")
+X=data.frame(ring,ar1=residuals(M)) # Use "residual chronology" derived from selected type of ring width series
+colnames(X)[c(2:ncol(X))]=c("raw","spline","modnegexp","means","ar","res")
+
 
 
 # Climate Data:----
@@ -82,10 +84,8 @@ Y=clim
 Y$yvalue[Y$yvalue==-999.0]=NA
 
 # Choose Climate Variables:----
-colnames(Y)[1:2]=c("year","month")
-Y=Y[,c(1:4)]
+colnames(Y)[1:2]=c("year","month");Y=Y[,c(1:4)]
 Y=dcast(Y,year+month~variable)
-
 
 # BootRes:
 # Choose only up to 2 cliamte variables:
@@ -93,17 +93,16 @@ Clim=select.list(names(Y[,3:ncol(Y)]),multiple=TRUE,title="Select Climate Variab
 Y1=Y[,names(Y) %in% c("year","month",Clim)]
 
 # Select Type of Ring Width (Choose only one)
-X=ring
-
 Ring.list=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Rind Width Series of Xour Interest:",graphics=TRUE)
-X=X[,names(X) %in% c("year",Ring.list)]
+X1=X[,names(X) %in% c("year",Ring.list)]
 
 # Identify Strength of Monthly Signals with Tree Ring----
-X=data.frame(X[,1:2],row.names="year")
+X1=data.frame(X1[,1:2],row.names="year")
+
 
 # View Important Climate Variables
 op=par(mar=c(5,5,6,3))
-dc.corr <- dcc(X,Y1,method = "corr")
+dc.corr <- dcc(X1,Y1,method = "corr")
 dcplot(dc.corr)
 par(op)
 
@@ -111,65 +110,72 @@ par(op)
 ## Correlation and Linear Regression
 # Reshape Climte dataset
 ## Use only one climate variable:
-
-Clim=select.list(names(Y[,3:ncol(Y)]),multiple=TRUE,title="Select Climate Variables of Your interest:",graphics=TRUE)
+Clim=select.list(names(Y[,3:ncol(Y)]),multiple=TRUE,title="Select only one climate variable:",graphics=TRUE)
 Y1=Y[,names(Y) %in% c("year","month",Clim)]
 Y1=recast(Y1,year~variable+month,id.var=c("year","month"),na.rm=TRUE)
 
 # Convert to time series object
 Y1=ts(Y1,frequency=1,start=min(Y1$year),end=max(Y1$year))
+
 Y1=cbind(p=Y1,c=lag(Y1))
 Y1=as.data.frame(Y1)
 
 # Rename variables for ease of interpretation
-colnames(Y1)=c("p.year","p.Jan","p.Feb","p.Mar","p.Apr","p.May","p.Jun","p.Jul","p.Aug","p.Sep","p.Oct","p.Nov","p.Dec",
-               "year","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
-ind=which(colnames(Y1)=="year")
-Y1=Y1[-1,c(ind,2:(ind-1),(ind+1):ncol(Y1))]
+colnames(Y1)=c("year","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec",
+               "p.year","p.Jan","p.Feb","p.Mar","p.Apr","p.May","p.Jun","p.Jul","p.Aug","p.Sep","p.Oct","p.Nov","p.Dec")
+ind=which(colnames(Y1)=="p.year")
+
+Y1=Y1[-1,c(1:(ind-1),(ind+1):ncol(Y1))]
+
 
 # Select Months to be Averaged
 Month.list=select.list(names(Y1[,c(2:ncol(Y1))]),multiple=TRUE,title="Choose Months to be Averaged:",graphics=TRUE)
-if(length(Month.list)==1) {Y1=transform(Y1,means=Y1[,c(Month.list)])} else{Y1=transform(Y1,means=rowMeans(Y1[,c(Month.list)]))}
-
-# Delete rows where missing values are observed
-Y1=na.omit(Y1)
+if(length(Month.list)==1) {Y2=transform(Y1,means=Y1[,c(Month.list)])} else{Y2=transform(Y1,means=rowMeans(Y1[,c(Month.list)]))}
 
 # ID time period
-time=paste(min(Y1$year),max(Y1$year),sep="-")
+time=paste(min(Y2$year),max(Y2$year),sep="-")
 timePeriod=matrix(unlist(strsplit(time,"-")),length(time),2,byrow=TRUE)
 
+# Ring width do not seem reliable after 1998 based on large residuals after linear fit. so remove 
+# ring width after 1998
+YearCut=1998
+
+# Delete rows where missing values are observed
+Y2=na.omit(Y2)
+Y2=subset(Y2,year>=as.numeric(timePeriod[1,1]) & year<YearCut)
+
 # Select Ring Width during the specified Period
-X=ring
-X=subset(X,year>=as.numeric(timePeriod[1,1]) & year<=as.numeric(timePeriod[1,2]))
-Ring.list=select.list(names(X[,2:ncol(X)]),multiple=TRUE,title="Select Rind Width Series of Xour Interest:",graphics=TRUE)
-X=X[,names(X) %in% c("year",Ring.list)]
+#X1=subset(X,year>=as.numeric(timePeriod[1,1]) & year<=as.numeric(timePeriod[1,2]))
+X1=subset(X,year>=as.numeric(timePeriod[1,1]) & year<YearCut)
+Ring.list=select.list(names(X1[,2:ncol(X1)]),multiple=TRUE,title="Select Rind Width Series of Xour Interest:",graphics=TRUE)
+X1=X1[,names(X1) %in% c("year",Ring.list)]
 
 # Plot
-RingName=names(X)[2]
+RingName=names(X1)[2]
 
 op=par(mar=c(5,5,4,5))
 
 c=paste(Month.list,collapse=", ")
-plot(Y1$year,Y1$means,type="l",xlab="Year",ylab=Clim,main=paste("Months: ",c,sep=""))
+plot(Y2$year,Y2$means,type="l",xlab="Year",ylab=Clim,main=paste("Months: ",c,sep=""))
 par(new=TRUE)
 plot(X$year,X[,2],col="blue",type="l",axes = FALSE, bty = "n", xlab = "", ylab = "") # Tree ring
 axis(side=4, at = pretty(range(X[,2])))
 mtext(RingName, side=4, line=3)
 
+
 par(op)
 
 
-# Run correlation and linear regression
-## With mean
+# Run correlation and linear regression 
+XX=merge(X1,Y2,by="year")
+cor(XX[,2],XX$means,method="pearson")
 
-plot(X[,2],Y1$means,xlab=RingName,ylab=Clim)
-cor(X[,2],Y1$means,method="pearson")
-
-
-M0=lm(Y1$means~X[,2])
+M0=lm(XX$means~XX[,2])
 summary(M0) 
-plot(M0)
 
+op=par(mfrow=c(2,2))
+plot(M0)
+par(op)
 ####################################################
 
 
